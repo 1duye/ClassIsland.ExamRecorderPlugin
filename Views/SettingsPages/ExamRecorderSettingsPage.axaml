@@ -1,0 +1,217 @@
+<ci:SettingsPageBase xmlns="https://github.com/avaloniaui"
+                      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                      xmlns:ui="using:FluentAvalonia.UI.Controls"
+                      xmlns:ci="http://classisland.tech/schemas/xaml/core"
+                      mc:Ignorable="d"
+                      x:Class="ClassIsland.ExamRecorderPlugin.Views.SettingsPages.ExamRecorderSettingsPage"
+                      d:DesignWidth="900" d:DesignHeight="640"
+                      FontFamily="{StaticResource HarmonyOsSans}"
+                      TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+                      TextElement.FontSize="14">
+
+    <ci:SettingsPageBase.Styles>
+        <!-- 连接状态指示灯 -->
+        <Style Selector="Ellipse.conn-ok">
+            <Setter Property="Fill" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+        </Style>
+        <Style Selector="Ellipse.conn-bad">
+            <Setter Property="Fill" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+        </Style>
+        <!-- 提示条 -->
+        <Style Selector="Border.toast-ok">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+        </Style>
+        <Style Selector="Border.toast-bad">
+            <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+        </Style>
+    </ci:SettingsPageBase.Styles>
+
+    <Grid>
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel Classes="settings-container animated-intro">
+
+                <!-- 页面标题 -->
+                <TextBlock Classes="l-instructive"
+                           TextWrapping="Wrap"
+                           Margin="0 0 0 4"
+                           Text="把标记为「考试科目」的科目排入的课程记录为考试，生成 EA2 档案并推送信号给 ExamAware 自动放映插件。" />
+
+                <!-- 连接状态 -->
+                <ci:IconText Glyph="&#xEAB0;" Text="连接状态" Margin="0 8 0 4" />
+                <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="16 14">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                        <Ellipse x:Name="ConnDot" Classes="conn-bad"
+                                 Width="10" Height="10" VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                            <TextBlock x:Name="ConnText" Text="正在检测…" FontWeight="SemiBold" />
+                            <TextBlock x:Name="ConnHint"
+                                       Classes="l-instructive"
+                                       TextWrapping="Wrap"
+                                       Text="正在检测 ExamAware 自动放映插件服务" />
+                        </StackPanel>
+                        <Button Grid.Column="2" Classes="accent" Click="OnCheck"
+                                VerticalAlignment="Center" Content="检测连接" />
+                    </Grid>
+                </Border>
+
+                <!-- 运行状态 -->
+                <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="16 12" Margin="0 6 0 0">
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                        <StackPanel Spacing="2">
+                            <TextBlock Classes="l-instructive" Text="最近记录" />
+                            <TextBlock x:Name="RecordText" Text="尚未生成考试档案" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Classes="l-instructive" Text="最近推送" />
+                            <TextBlock x:Name="PushText" Text="尚未推送" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- 考试科目 -->
+                <ci:IconText Glyph="&#xE47A;" Text="考试科目" Margin="0 14 0 4" />
+                <Border Background="{DynamicResource ControlFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="16 14">
+                    <StackPanel Spacing="10">
+                        <TextBlock Classes="l-instructive"
+                                   TextWrapping="Wrap"
+                                   Text="打开「档案编辑 → 科目 → 更多选项 → 考试科目」即可把该科目设为考试科目；之后新建的科目同样可用，无需再改科目名。" />
+                        <ItemsControl x:Name="MarkedList">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource AccentFillColorDefaultBrush}"
+                                            CornerRadius="999" Padding="10 3" Margin="0 0 6 6">
+                                        <TextBlock Text="{Binding}"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock x:Name="MarkedEmpty"
+                                   Classes="l-instructive"
+                                   TextWrapping="Wrap"
+                                   Text="还没有标记任何考试科目。" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Click="OnRefreshSubjects" Content="刷新列表" />
+                            <Button Classes="accent" Click="OnRegenerate" Content="立即重新生成" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 记录与推送 -->
+                <ci:IconText Glyph="&#xEF27;" Text="记录与推送" Margin="0 14 0 4" />
+                <ui:SettingsExpander Header="默认提醒时间"
+                                     Description="写入 EA2 档案的提前提醒分钟数；单个科目可单独覆盖。">
+                    <ui:SettingsExpander.Footer>
+                        <ci:Field Suffix="分钟">
+                            <NumericUpDown x:Name="AlertBox" Minimum="0" Maximum="120" MinWidth="140"
+                                           FormatString="0" Value="15" />
+                        </ci:Field>
+                    </ui:SettingsExpander.Footer>
+                </ui:SettingsExpander>
+                <ui:SettingsExpander Header="兼容旧命名"
+                                     Description="额外把科目名以 _考试 结尾的科目视为考试科目（旧版行为，默认关闭）。">
+                    <ui:SettingsExpander.Footer>
+                        <ToggleSwitch x:Name="LegacySwitch" IsChecked="False" OnContent="" OffContent="" />
+                    </ui:SettingsExpander.Footer>
+                </ui:SettingsExpander>
+                <ui:SettingsExpander Header="合并连堂考试"
+                                     Description="同一天里同一考试科目的相邻两节课（连堂）合并为一场考试：时间跨度覆盖两节与中间课间，避免课间被当成「考试结束」。课间超过 15 分钟（如跨午休）不合并。">
+                    <ui:SettingsExpander.Footer>
+                        <ToggleSwitch x:Name="MergeSwitch" IsChecked="True" OnContent="" OffContent="" />
+                    </ui:SettingsExpander.Footer>
+                </ui:SettingsExpander>
+
+                <!-- 连接配置 -->
+                <ci:IconText Glyph="&#xEAB0;" Text="连接配置" Margin="0 14 0 4" />
+                <ui:SettingsExpander Header="自动发现端口"
+                                     Description="读取 ExamAware「自动放映」插件上报的端口。EA 重启后端口变化也能自动跟上，推荐开启；关闭则使用下面手填的端口。">
+                    <ui:SettingsExpander.Footer>
+                        <ToggleSwitch x:Name="AutoDiscoverSwitch" IsChecked="True" OnContent="" OffContent="" />
+                    </ui:SettingsExpander.Footer>
+                </ui:SettingsExpander>
+                <ui:SettingsExpander Header="当前推送地址"
+                                     Description="实际会 POST 的地址；显示「自动发现」表示端口来自 EA 上报。">
+                    <ui:SettingsExpander.Footer>
+                        <TextBlock x:Name="EndpointText" Classes="l-instructive" Text="—" TextWrapping="Wrap" MaxWidth="320" />
+                    </ui:SettingsExpander.Footer>
+                </ui:SettingsExpander>
+                <ui:SettingsExpander Header="EA 端 HTTP API 地址"
+                                     Description="通常保持 127.0.0.1，需与 EA「设置 → HTTP API」一致。">
+                    <ui:SettingsExpander.Footer>
+                        <TextBox x:Name="HostBox" Text="127.0.0.1" MinWidth="180" />
+                    </ui:SettingsExpander.Footer>
+                </ui:SettingsExpander>
+                <ui:SettingsExpander Header="端口"
+                                     Description="必须与 EA「设置 → HTTP API」中的端口一致。">
+                    <ui:SettingsExpander.Footer>
+                        <NumericUpDown x:Name="PortBox" Minimum="1" Maximum="65535" MinWidth="180"
+                                       FormatString="0" Value="31235" />
+                    </ui:SettingsExpander.Footer>
+                </ui:SettingsExpander>
+
+                <!-- 主界面联动 -->
+                <ci:IconText Glyph="&#xEFBF;" Text="主界面联动" Margin="0 14 0 4" />
+                <ui:SettingsExpander Header="放映时隐藏主界面"
+                                     Description="考试开始（进入放映）时自动隐藏 ClassIsland 主界面。">
+                    <ui:SettingsExpander.Footer>
+                        <ToggleSwitch x:Name="HideSwitch" IsChecked="False" OnContent="" OffContent="" />
+                    </ui:SettingsExpander.Footer>
+                </ui:SettingsExpander>
+                <ui:SettingsExpander Header="结束后恢复主界面"
+                                     Description="考试结束（退出放映）后自动恢复显示 ClassIsland 主界面。">
+                    <ui:SettingsExpander.Footer>
+                        <ToggleSwitch x:Name="ShowSwitch" IsChecked="False" OnContent="" OffContent="" />
+                    </ui:SettingsExpander.Footer>
+                </ui:SettingsExpander>
+
+                <!-- 保存 -->
+                <DockPanel LastChildFill="False" Margin="0 18 0 0">
+                    <TextBlock x:Name="CurCfg" Classes="l-instructive" VerticalAlignment="Center" />
+                    <Button DockPanel.Dock="Right" Classes="accent" Click="OnSave"
+                            Content="保存设置" MinWidth="96" />
+                </DockPanel>
+
+                <TextBlock Margin="0 8 0 0"
+                           Classes="l-instructive"
+                           TextWrapping="Wrap"
+                           Text="提示：EA 端需在「设置 → HTTP API」中开启服务；地址与端口必须与 EA 一致。" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 提示条 -->
+        <Border x:Name="ToastBorder"
+                Classes="toast-ok"
+                HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                Padding="14 10" CornerRadius="6" BorderThickness="1"
+                Margin="0 0 0 22" Opacity="0" IsHitTestVisible="False">
+            <Border.Transitions>
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.18">
+                        <DoubleTransition.Easing>
+                            <CubicEaseOut />
+                        </DoubleTransition.Easing>
+                    </DoubleTransition>
+                </Transitions>
+            </Border.Transitions>
+            <TextBlock x:Name="ToastText" FontSize="13" />
+        </Border>
+    </Grid>
+</ci:SettingsPageBase>

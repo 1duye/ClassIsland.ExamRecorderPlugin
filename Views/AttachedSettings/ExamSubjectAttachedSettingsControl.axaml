@@ -1,0 +1,30 @@
+<ci:AttachedSettingsControlBase x:TypeArguments="models:ExamSubjectAttachedSettings"
+                                x:Class="ClassIsland.ExamRecorderPlugin.Views.AttachedSettings.ExamSubjectAttachedSettingsControl"
+                                xmlns="https://github.com/avaloniaui"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                                xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                                xmlns:ci="http://classisland.tech/schemas/xaml/core"
+                                xmlns:models="clr-namespace:ClassIsland.ExamRecorderPlugin.Models"
+                                xmlns:local="clr-namespace:ClassIsland.ExamRecorderPlugin.Views.AttachedSettings"
+                                mc:Ignorable="d"
+                                d:DesignWidth="440">
+    <StackPanel Spacing="10"
+                DataContext="{Binding RelativeSource={RelativeSource FindAncestor, AncestorType=local:ExamSubjectAttachedSettingsControl}}">
+        <TextBlock Classes="l-instructive"
+                   TextWrapping="Wrap"
+                   Text="此科目已标记为考试科目。该科目排入的课程会被写入当天的 EA2 考试档案，并由自动放映插件在考前自动开播。" />
+        <CheckBox Content="为该科目单独指定提醒时间"
+                  IsChecked="{Binding Settings.UseAlertTimeOverride, Mode=TwoWay}" />
+        <ci:Field Label="提醒时间"
+                  Suffix="分钟"
+                  IsVisible="{Binding Settings.UseAlertTimeOverride}">
+            <NumericUpDown Minimum="0"
+                           Maximum="120"
+                           MaxWidth="140"
+                           HorizontalAlignment="Left"
+                           FormatString="0"
+                           Value="{Binding Settings.AlertTimeOverride, Mode=TwoWay}" />
+        </ci:Field>
+    </StackPanel>
+</ci:AttachedSettingsControlBase>

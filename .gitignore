@@ -1,0 +1,7 @@
+bin/
+obj/
+cipx/
+*.user
+*.bak
+*.log
+NuGet/

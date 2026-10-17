@@ -1,0 +1,8 @@
+id: classisland.exam-recorder
+name: ExamAware2联系人
+description: 自动检测 _考试 科目，生成 EA2 配置并推送信号给 ExamAware 2
+entranceAssembly: "ClassIsland.ExamRecorderPlugin.dll"
+url: https://github.com/ClassIsland/ClassIsland
+apiVersion: 2.0.0.0
+version: 0.0.0.14
+author: α-氯氰菊酯
