@@ -113,13 +113,6 @@ push OK: ...\data\EA2\考试记录_20261017.ea2
 
 ## 开发者备注
 
-- 插件 ID `classisland.exam-recorder`，清单见 `manifest.yml`。
-- .NET 8，`ClassIsland.PluginSdk` 2.0.0.*。
-- 构建：`dotnet build -c Release`；开了 `CreateCipx` 会在 `cipx\` 生成 `.cipx`。
-- 和 ExamAware 端的约定：`POST /api/v1/examaware-auto-player/signal`，body `{ "ea2Path": "绝对路径", "futureOnly": true|false }`。课表变更 / 启动用 `active-or-future`，下课时用 `future-only`。
-- 连堂合并的逻辑在 `ExamMerge.cs`，不依赖 ClassIsland 类型，可以单独测。
-- 日志：`data\logs\exam2\ExamRecorderPlugin.log`。
-
 ## 许可
 
 MIT
