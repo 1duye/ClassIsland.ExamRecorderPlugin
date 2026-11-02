@@ -55,6 +55,9 @@ public class ExamRecorderService : BackgroundService
     /// <summary>最近一次推送的结果摘要，供设置页展示。</summary>
     public static string LastPushSummary { get; private set; } = "尚未推送";
 
+    /// <summary>最近一次生成是否真的产出了档案。设置页据此如实反馈，避免「没生成却说已推送」。</summary>
+    public static bool LastRecordProduced { get; private set; }
+
     private static Action? _recordRequested;
 
     /// <summary>
@@ -303,7 +306,9 @@ public class ExamRecorderService : BackgroundService
     {
         try
         {
-            var now = DateTime.Now; var today = now.Date; var plan = _lessons.CurrentClassPlan; if (plan == null) return;
+            LastRecordProduced = false;
+            var now = DateTime.Now; var today = now.Date; var plan = _lessons.CurrentClassPlan;
+            if (plan == null) { LastRecordSummary = "尚未排课（无课表）"; return; }
             var subs = _profile.Profile.Subjects; var cfg = Load();
             // ① 按课表顺序收集「考试科目」的课次，并记下它在启用课次里的序号（判断连堂用）
             var raw = new List<ExamWindow>();
@@ -329,7 +334,7 @@ public class ExamRecorderService : BackgroundService
                 if (end <= start) continue;
                 raw.Add(new ExamWindow(examName, c.SubjectId, start, end, alertTime, seq));
             }
-            if (raw.Count == 0) return;
+            if (raw.Count == 0) { LastRecordSummary = "今天没有考试课次"; return; }
 
             // ② 连堂合并：同一科目 + 课表上相邻两节 + 课间不超过 ConsecutiveGap → 合成一场
             var merged = ExamMerge.Merge(raw, cfg.MergeConsecutivePeriods, ConsecutiveGap);
@@ -348,6 +353,7 @@ public class ExamRecorderService : BackgroundService
             var ea2 = new ExamRecord { ExamName = $"{today:yyyy-MM-dd}考试", Message = $"共{exams.Count}项", ExamInfos = exams };
             var dir = Ea2Dir(); Directory.CreateDirectory(dir); var fp = Path.Combine(dir, $"考试记录_{today:yyyyMMdd}.ea2");
             WriteAllTextAtomic(fp, JsonSerializer.Serialize(ea2, new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+            LastRecordProduced = true;
             Log("INFO", $"recorded {exams.Count} exams: {fp}" + (mergedPeriods > 0 ? $" (merged {mergedPeriods} consecutive period(s))" : ""));
             LastRecordSummary = $"{exams.Count} 场考试" + (mergedPeriods > 0 ? $"（合并 {mergedPeriods} 节课）" : "") + $" · {now:HH:mm:ss} 更新";
             Push(fp, futureOnly);

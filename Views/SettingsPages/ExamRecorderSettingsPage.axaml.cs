@@ -83,7 +83,9 @@ public partial class ExamRecorderSettingsPage : SettingsPageBase
         ExamRecorderService.RequestRecord();
         RefreshSubjects();
         RefreshRuntimeStatus();
-        Toast("已重新生成并推送", true);
+        // 如实反馈：没有考试课次时不能谎报「已推送」
+        if (ExamRecorderService.LastRecordProduced) Toast("已重新生成并推送", true);
+        else Toast($"未生成档案：{ExamRecorderService.LastRecordSummary}", false);
     }
 
     private void OnCheck(object? _, RoutedEventArgs __) => _ = Chk();
