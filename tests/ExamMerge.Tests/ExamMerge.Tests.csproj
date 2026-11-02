@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ExamMerge.Tests</RootNamespace>
+    <AssemblyName>ExamMerge.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 直接链接仓库里的 ExamMerge.cs，保证测的就是插件编译的那份 -->
+    <Compile Include="../../ExamMerge.cs" Link="ExamMerge.cs" />
+  </ItemGroup>
+
+</Project>

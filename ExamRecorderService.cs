@@ -168,15 +168,40 @@ public class ExamRecorderService : BackgroundService
     /// </summary>
     private static void RotateLogIfNeeded()
     {
-        var current = new FileInfo(LogPath);
-        if (!current.Exists || current.Length < LogMaxBytes) return;
-        var backup = Path.Combine(LogDir, "ExamRecorderPlugin.1.log");
-        if (File.Exists(backup)) File.Delete(backup);
-        File.Move(LogPath, backup);
+        try
+        {
+            var current = new FileInfo(LogPath);
+            if (!current.Exists || current.Length < LogMaxBytes) return;
+            var backup = Path.Combine(LogDir, "ExamRecorderPlugin.1.log");
+            if (File.Exists(backup)) File.Delete(backup);
+            File.Move(LogPath, backup);
+        }
+        catch
+        {
+            // 轮转失败（文件被占用之类）不能反过来影响写日志本身，下次再试
+        }
+    }
+
+    /// <summary>
+    /// 先写临时文件再原子替换。EA 端可能正好在这时读档案，
+    /// 直接覆盖写会让它读到半截 JSON，然后判「档案坏了」。
+    /// </summary>
+    private static void WriteAllTextAtomic(string path, string content)
+    {
+        var tmp = path + ".tmp";
+        try
+        {
+            File.WriteAllText(tmp, content, Encoding.UTF8);
+            File.Move(tmp, path, overwrite: true);
+        }
+        finally
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+        }
     }
 
     public static ExamRecorderSettings Load() { try { if (File.Exists(CfgPath)) return JsonSerializer.Deserialize<ExamRecorderSettings>(File.ReadAllText(CfgPath, Encoding.UTF8)) ?? new(); } catch {} return new(); }
-    public static void Save(ExamRecorderSettings s) { try { s.HttpApiHost = CleanHost(s.HttpApiHost); var d = Path.GetDirectoryName(CfgPath); if (d != null) Directory.CreateDirectory(d); File.WriteAllText(CfgPath, JsonSerializer.Serialize(s, new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8); } catch {} }
+    public static void Save(ExamRecorderSettings s) { try { s.HttpApiHost = CleanHost(s.HttpApiHost); var d = Path.GetDirectoryName(CfgPath); if (d != null) Directory.CreateDirectory(d); WriteAllTextAtomic(CfgPath, JsonSerializer.Serialize(s, new JsonSerializerOptions { WriteIndented = true })); } catch {} }
 
     public ExamRecorderService(ILessonsService lessons, IProfileService profile, ILogger<ExamRecorderService> logger)
     { _lessons = lessons; _profile = profile; _logger = logger; }
@@ -191,6 +216,9 @@ public class ExamRecorderService : BackgroundService
     private static string? _pushActiveFile;
     private static string? _pushPendingFile;
     private static bool _pushPendingFutureOnly;
+    private static Task? _pushTask;
+    /// <summary>单次推送的最大重试次数（网络异常 / 5xx 才重试，4xx 直接放弃）。</summary>
+    private const int PushMaxRetries = 2;
 
     protected override Task ExecuteAsync(CancellationToken ct)
     {
@@ -230,7 +258,48 @@ public class ExamRecorderService : BackgroundService
         } catch (Exception ex) { Log("WARN", $"clean err: {ex.Message}"); }
     }
 
+    private static readonly object _recordLock = new();
+    private static bool _recordRunning;
+    private static bool _recordPending;
+    private static bool _recordPendingFutureOnly;
+
+    /// <summary>
+    /// 生成并推送考试档案。课表变更（UI 线程）、设置页保存、下课事件都可能同时打进来，
+    /// 这里串行化：正在跑时只记下「还要再跑一次」，避免两轮交错写同一份档案。
+    /// </summary>
     private void Record(bool futureOnly = false)
+    {
+        lock (_recordLock)
+        {
+            if (_recordRunning)
+            {
+                _recordPending = true;
+                _recordPendingFutureOnly = futureOnly;
+                return;
+            }
+            _recordRunning = true;
+        }
+        try { RecordCore(futureOnly); }
+        finally
+        {
+            bool again;
+            bool againFutureOnly;
+            lock (_recordLock)
+            {
+                _recordRunning = false;
+                again = _recordPending;
+                againFutureOnly = _recordPendingFutureOnly;
+                _recordPending = false;
+            }
+            if (again)
+            {
+                // 本轮生成期间课表又变了：补跑一轮，别让最新状态丢在路上
+                _ = Task.Run(() => Record(againFutureOnly));
+            }
+        }
+    }
+
+    private void RecordCore(bool futureOnly)
     {
         try
         {
@@ -278,7 +347,7 @@ public class ExamRecorderService : BackgroundService
             if (exams.Count == 0) return;
             var ea2 = new ExamRecord { ExamName = $"{today:yyyy-MM-dd}考试", Message = $"共{exams.Count}项", ExamInfos = exams };
             var dir = Ea2Dir(); Directory.CreateDirectory(dir); var fp = Path.Combine(dir, $"考试记录_{today:yyyyMMdd}.ea2");
-            File.WriteAllText(fp, JsonSerializer.Serialize(ea2, new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }), Encoding.UTF8);
+            WriteAllTextAtomic(fp, JsonSerializer.Serialize(ea2, new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
             Log("INFO", $"recorded {exams.Count} exams: {fp}" + (mergedPeriods > 0 ? $" (merged {mergedPeriods} consecutive period(s))" : ""));
             LastRecordSummary = $"{exams.Count} 场考试" + (mergedPeriods > 0 ? $"（合并 {mergedPeriods} 节课）" : "") + $" · {now:HH:mm:ss} 更新";
             Push(fp, futureOnly);
@@ -305,7 +374,8 @@ public class ExamRecorderService : BackgroundService
             _pushInFlight = true;
             _pushActiveFile = fp;
         }
-        _ = Task.Run(() => PushLoopAsync(fp, futureOnly));
+        var task = Task.Run(() => PushLoopAsync(fp, futureOnly));
+        lock (_pushLock) { _pushTask = task; }
     }
 
     /// <summary>消费合并后的推送请求。异常在这里兜底，不会逃逸成未观察异常。</summary>
@@ -322,6 +392,7 @@ public class ExamRecorderService : BackgroundService
                     {
                         _pushInFlight = false;
                         _pushActiveFile = null;
+                        _pushTask = null;
                         return;
                     }
                     fp = _pushPendingFile;
@@ -333,7 +404,7 @@ public class ExamRecorderService : BackgroundService
         }
         catch (Exception ex)
         {
-            lock (_pushLock) { _pushInFlight = false; _pushActiveFile = null; _pushPendingFile = null; }
+            lock (_pushLock) { _pushInFlight = false; _pushActiveFile = null; _pushPendingFile = null; _pushTask = null; }
             try { LastPushSummary = $"推送失败 · {ex.Message}"; Log("WARN", $"push fail: {ex.Message}"); } catch { }
         }
     }
@@ -341,22 +412,36 @@ public class ExamRecorderService : BackgroundService
     private static async Task PushOnceAsync(string fp, bool futureOnly)
     {
         var mode = futureOnly ? "future-only" : "active-or-future";
-        try
+        var resolved = ResolveSignalUrl();
+        var url = resolved.Url;
+        var payload = JsonSerializer.Serialize(new { ea2Path = fp, futureOnly });
+        for (var attempt = 0; ; attempt++)
         {
-            var resolved = ResolveSignalUrl();
-            var url = resolved.Url;
-            Log("INFO", $"push -> {url} mode={mode} source={resolved.Source}");
-            using var body = new StringContent(JsonSerializer.Serialize(new { ea2Path = fp, futureOnly }), Encoding.UTF8, "application/json");
-            using var r = await _http.PostAsync(url, body).ConfigureAwait(false);
-            LastPushSummary = r.IsSuccessStatusCode
-                ? $"推送成功 · {DateTime.Now:HH:mm:ss}（{mode}）"
-                : $"推送失败 · HTTP {(int)r.StatusCode}";
-            Log(r.IsSuccessStatusCode ? "INFO" : "WARN", r.IsSuccessStatusCode ? $"push OK: {fp}" : $"push HTTP {(int)r.StatusCode}");
-        }
-        catch (Exception ex)
-        {
-            LastPushSummary = $"推送失败 · {ex.Message}";
-            Log("WARN", $"push fail: {ex.Message}");
+            try
+            {
+                Log("INFO", $"push -> {url} mode={mode} source={resolved.Source} attempt={attempt + 1}");
+                using var body = new StringContent(payload, Encoding.UTF8, "application/json");
+                using var r = await _http.PostAsync(url, body).ConfigureAwait(false);
+                var ok = r.IsSuccessStatusCode;
+                LastPushSummary = ok
+                    ? $"推送成功 · {DateTime.Now:HH:mm:ss}（{mode}）"
+                    : $"推送失败 · HTTP {(int)r.StatusCode}";
+                Log(ok ? "INFO" : "WARN", ok ? $"push OK: {fp}" : $"push HTTP {(int)r.StatusCode}");
+                // 4xx 是地址/参数写错了，重试没意义；5xx 才值得再来一次
+                if (ok || (int)r.StatusCode < 500 || attempt >= PushMaxRetries) return;
+            }
+            catch (Exception ex)
+            {
+                if (attempt >= PushMaxRetries)
+                {
+                    LastPushSummary = $"推送失败 · {ex.Message}";
+                    Log("WARN", $"push fail after {attempt + 1} tries: {ex.Message}");
+                    return;
+                }
+                Log("WARN", $"push attempt {attempt + 1} failed, retrying: {ex.Message}");
+            }
+            // 400ms → 1200ms 退避：EA 可能正在重启 HTTP 服务，几秒后就能连上
+            await Task.Delay(TimeSpan.FromMilliseconds(400 * Math.Pow(3, attempt))).ConfigureAwait(false);
         }
     }
 
@@ -456,6 +541,14 @@ public class ExamRecorderService : BackgroundService
     {
         Log("INFO", "disposing");
         _recordRequested = null;
+        // 退出时给在途推送最多 2 秒，别让最后一份档案的通知悄无声息地丢掉
+        try
+        {
+            Task? inflight;
+            lock (_pushLock) inflight = _pushTask;
+            inflight?.Wait(TimeSpan.FromSeconds(2));
+        }
+        catch { }
         lock (_uiLock) { _uiTimer?.Dispose(); _uiTimer = null; _uiActions = []; RestoreMainWindowIfNeeded(); }
         _lessons.OnBreakingTime -= OnBreakingTime;
         if (_lessonsPropertyChanged != null) { _lessons.PropertyChanged -= _lessonsPropertyChanged; _lessonsPropertyChanged = null; }

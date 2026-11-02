@@ -116,9 +116,20 @@ push OK: ...\data\EA2\考试记录_20261017.ea2
 - 插件 ID `classisland.exam-recorder`，当前版本 `0.0.0.15`，清单见 `manifest.yml`。
 - .NET 8，`ClassIsland.PluginSdk` 2.0.0.*。
 - 构建：`dotnet build -c Release`；开了 `CreateCipx` 会在 `cipx\` 生成 `.cipx`。
+- 测试：`dotnet run --project tests/ExamMerge.Tests -c Release`（16 条连堂合并用例，纯控制台断言，不依赖 xUnit、离线可跑）。
 - 和 ExamAware 端的约定：`POST /api/v1/examaware-auto-player/signal`，body `{ "ea2Path": "绝对路径", "futureOnly": true|false }`。课表变更 / 启动用 `active-or-future`，下课时用 `future-only`。
 - 连堂合并的逻辑在 `ExamMerge.cs`，不依赖 ClassIsland 类型，可以单独测。
 - 日志：`data\logs\exam2\ExamRecorderPlugin.log`。
+
+## 健壮性设计
+
+几条是踩过坑之后专门加固的，改代码时别顺手改回去：
+
+- **推送不阻塞界面**：`Push()` 早先同步等 HTTP（超时 5s），而它由课表变更、设置页保存直接触发——EA 没开的时候会把 ClassIsland 界面卡住数秒。现在丢给后台任务，推送途中新来的请求合并成「最后一次」；退出时给在途推送最多 2 秒收尾。
+- **推送会重试**：网络异常和 5xx 重试 2 次（400ms → 1200ms 退避），4xx 直接放弃（地址或参数写错了，重试没意义）。
+- **生成档案串行化**：课表变更、设置页保存、下课事件可能同时触发 `Record()`，现在同一时刻只跑一轮，期间再有请求就只补跑一次，避免两轮交错写同一份档案。
+- **原子写入**：`.ea2` 档案和插件配置都先写 `.tmp` 再替换，EA 端不会读到半截 JSON。
+- **日志轮转不致命**：轮转失败（文件被占用）只跳过这一次，不影响继续写日志。
 
 ## 代码水印与日志
 
