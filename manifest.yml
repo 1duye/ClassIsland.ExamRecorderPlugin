@@ -4,5 +4,5 @@ description: 自动检测 _考试 科目，生成 EA2 配置并推送信号给 E
 entranceAssembly: "ClassIsland.ExamRecorderPlugin.dll"
 url: https://github.com/ClassIsland/ClassIsland
 apiVersion: 2.0.0.0
-version: 0.0.0.14
+version: 0.0.0.15
 author: α-氯氰菊酯

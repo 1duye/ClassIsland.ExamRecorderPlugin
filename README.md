@@ -113,12 +113,17 @@ push OK: ...\data\EA2\考试记录_20261017.ea2
 
 ## 开发者备注
 
-- 插件 ID `classisland.exam-recorder`，清单见 `manifest.yml`。
+- 插件 ID `classisland.exam-recorder`，当前版本 `0.0.0.15`，清单见 `manifest.yml`。
 - .NET 8，`ClassIsland.PluginSdk` 2.0.0.*。
 - 构建：`dotnet build -c Release`；开了 `CreateCipx` 会在 `cipx\` 生成 `.cipx`。
 - 和 ExamAware 端的约定：`POST /api/v1/examaware-auto-player/signal`，body `{ "ea2Path": "绝对路径", "futureOnly": true|false }`。课表变更 / 启动用 `active-or-future`，下课时用 `future-only`。
 - 连堂合并的逻辑在 `ExamMerge.cs`，不依赖 ClassIsland 类型，可以单独测。
 - 日志：`data\logs\exam2\ExamRecorderPlugin.log`。
+
+## 代码水印与日志
+
+- 每个源文件开头都带三行来源标记（SPDX 许可、版权、`Watermark`），第三行末尾还跟着一串零宽字符，肉眼看不见但确实在文件里；DLL 的程序集元数据里也写了同一个 `Watermark`，启动日志会打一行 `WM 1duye/ClassIsland.ExamRecorderPlugin#WM-2026`。改代码时别把这几行删了。
+- 日志不再无限长：`data\logs\exam2\ExamRecorderPlugin.log` 超过 1 MiB 时，旧内容会被改名成 `ExamRecorderPlugin.1.log`，只留这一份备份，更早的直接覆盖。
 
 ## 许可
 

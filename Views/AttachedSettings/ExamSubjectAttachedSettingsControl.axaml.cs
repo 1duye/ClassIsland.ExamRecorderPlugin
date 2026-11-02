@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 α-氯氰菊酯 <https://github.com/1duye>
+// Watermark: 1duye/ClassIsland.ExamRecorderPlugin#WM-2026​​‌‌​​​‌​‌‌​​‌​​​‌‌‌​‌​‌​‌‌‌‌​​‌​‌‌​​‌​‌​‌‌‌‌‌​​​‌​​​​‌‌​‌‌​‌‌​​​‌‌​​​​‌​‌‌‌​​‌‌​‌‌‌​​‌‌​‌​​‌​​‌​‌‌‌​​‌‌​‌‌​‌‌​​​‌‌​​​​‌​‌‌​‌‌‌​​‌‌​​‌​​​​‌​‌‌‌​​‌​​​‌​‌​‌‌‌‌​​​​‌‌​​​​‌​‌‌​‌‌​‌​‌​‌​​‌​​‌‌​​‌​‌​‌‌​​​‌‌​‌‌​‌‌‌‌​‌‌‌​​‌​​‌‌​​‌​​​‌‌​​‌​‌​‌‌‌​​‌​​‌​‌​​​​​‌‌​‌‌​​​‌‌‌​‌​‌​‌‌​​‌‌‌​‌‌​‌​​‌​‌‌​‌‌‌​​‌‌‌‌‌​​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
+
 using ClassIsland.Core.Abstractions.Controls;
 using ClassIsland.Core.Attributes;
 using ClassIsland.Core.Enums;

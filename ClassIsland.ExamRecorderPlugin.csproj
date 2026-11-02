@@ -20,6 +20,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 代码水印：同时写进程序集元数据，便于从 DLL 反查来源。 -->
+    <AssemblyMetadata Include="Watermark" Value="1duye/ClassIsland.ExamRecorderPlugin#WM-2026" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="manifest.yml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

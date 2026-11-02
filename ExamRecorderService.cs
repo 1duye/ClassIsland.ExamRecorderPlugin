@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 α-氯氰菊酯 <https://github.com/1duye>
+// Watermark: 1duye/ClassIsland.ExamRecorderPlugin#WM-2026​​‌‌​​​‌​‌‌​​‌​​​‌‌‌​‌​‌​‌‌‌‌​​‌​‌‌​​‌​‌​‌‌‌‌‌​​​‌​​​​‌‌​‌‌​‌‌​​​‌‌​​​​‌​‌‌‌​​‌‌​‌‌‌​​‌‌​‌​​‌​​‌​‌‌‌​​‌‌​‌‌​‌‌​​​‌‌​​​​‌​‌‌​‌‌‌​​‌‌​​‌​​​​‌​‌‌‌​​‌​​​‌​‌​‌‌‌‌​​​​‌‌​​​​‌​‌‌​‌‌​‌​‌​‌​​‌​​‌‌​​‌​‌​‌‌​​​‌‌​‌‌​‌‌‌‌​‌‌‌​​‌​​‌‌​​‌​​​‌‌​​‌​‌​‌‌‌​​‌​​‌​‌​​​​​‌‌​‌‌​​​‌‌‌​‌​‌​‌‌​​‌‌‌​‌‌​‌​​‌​‌‌​‌‌‌​​‌‌‌‌‌​​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
+
+using System.ComponentModel;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -26,6 +31,8 @@ public class ExamRecorderService : BackgroundService
     private static string CfgPath => Path.Combine(CommonDirectories.AppRootFolderPath, "Config", "ExamRecorderPlugin.json");
     private static string LogDir => Path.Combine(Path.GetDirectoryName(CommonDirectories.AppRootFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) ?? ".", "data", "logs", "exam2");
     private static string LogPath => Path.Combine(LogDir, "ExamRecorderPlugin.log");
+    /// <summary>单个日志文件的大小上限，超过后轮转成 .1.log。</summary>
+    private const long LogMaxBytes = 1024 * 1024;
     private static readonly object _lock = new();
     private static readonly object _uiLock = new();
 
@@ -38,6 +45,9 @@ public class ExamRecorderService : BackgroundService
 
     /// <summary>旧版用于标记考试科目的科目名后缀。</summary>
     public const string LegacyExamSuffix = "_考试";
+
+    /// <summary>代码水印：同时写入启动日志与程序集元数据，用于溯源。</summary>
+    public const string Watermark = "1duye/ClassIsland.ExamRecorderPlugin#WM-2026";
 
     /// <summary>最近一次生成考试档案的结果摘要，供设置页展示。</summary>
     public static string LastRecordSummary { get; private set; } = "尚未生成考试档案";
@@ -139,7 +149,31 @@ public class ExamRecorderService : BackgroundService
     }
     
     public static void Log(string lvl, string msg)
-    { try { lock (_lock) { Directory.CreateDirectory(LogDir); File.AppendAllText(LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{lvl}] {msg}{Environment.NewLine}", Encoding.UTF8); } } catch {} }
+    {
+        try
+        {
+            lock (_lock)
+            {
+                Directory.CreateDirectory(LogDir);
+                RotateLogIfNeeded();
+                File.AppendAllText(LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{lvl}] {msg}{Environment.NewLine}", Encoding.UTF8);
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// 当前日志超过 1 MiB 时改名成 .1.log（覆盖旧的），只保留两份。
+    /// 调用方已经持有 _lock，这里不能再加锁，否则会死锁。
+    /// </summary>
+    private static void RotateLogIfNeeded()
+    {
+        var current = new FileInfo(LogPath);
+        if (!current.Exists || current.Length < LogMaxBytes) return;
+        var backup = Path.Combine(LogDir, "ExamRecorderPlugin.1.log");
+        if (File.Exists(backup)) File.Delete(backup);
+        File.Move(LogPath, backup);
+    }
 
     public static ExamRecorderSettings Load() { try { if (File.Exists(CfgPath)) return JsonSerializer.Deserialize<ExamRecorderSettings>(File.ReadAllText(CfgPath, Encoding.UTF8)) ?? new(); } catch {} return new(); }
     public static void Save(ExamRecorderSettings s) { try { s.HttpApiHost = CleanHost(s.HttpApiHost); var d = Path.GetDirectoryName(CfgPath); if (d != null) Directory.CreateDirectory(d); File.WriteAllText(CfgPath, JsonSerializer.Serialize(s, new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8); } catch {} }
@@ -149,11 +183,22 @@ public class ExamRecorderService : BackgroundService
 
     private ClassPlan? _plan;
     private DateTime _lastBreakPush = DateTime.MinValue;
+    private PropertyChangedEventHandler? _lessonsPropertyChanged;
+
+    // 推送状态：Push() 不阻塞调用方，推送途中到达的请求只合并保留最后一次。
+    private static readonly object _pushLock = new();
+    private static bool _pushInFlight;
+    private static string? _pushActiveFile;
+    private static string? _pushPendingFile;
+    private static bool _pushPendingFutureOnly;
 
     protected override Task ExecuteAsync(CancellationToken ct)
     {
         Log("INFO", $"started, profile={_profile.CurrentProfilePath}, log={LogPath}");
-        _lessons.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ILessonsService.CurrentClassPlan)) Bind(_lessons.CurrentClassPlan); };
+        Log("INFO", $"WM {Watermark}");
+        // 保存成字段才能反订阅，避免匿名 lambda 把服务一直挂在事件上。
+        _lessonsPropertyChanged = (_, e) => { if (e.PropertyName == nameof(ILessonsService.CurrentClassPlan)) Bind(_lessons.CurrentClassPlan); };
+        _lessons.PropertyChanged += _lessonsPropertyChanged;
         _lessons.OnBreakingTime += OnBreakingTime;
         Bind(_lessons.CurrentClassPlan);
         _recordRequested = () => Record();
@@ -241,7 +286,59 @@ public class ExamRecorderService : BackgroundService
         } catch (Exception ex) { Log("ERROR", $"record err: {ex.Message}"); }
     }
 
-    private void Push(string fp, bool futureOnly)
+    /// <summary>
+    /// 推送考试档案。不阻塞调用方：Record() 可能由 UI 线程（课表变更、设置页保存）同步触发，
+    /// 之前用 .Result 同步等 HTTP，EA 没开时会把界面卡住数秒。
+    /// </summary>
+    private static void Push(string fp, bool futureOnly)
+    {
+        lock (_pushLock)
+        {
+            if (_pushInFlight)
+            {
+                // 同一份档案正在推就直接合并掉；推送途中课表又变了，只记住最新的一份。
+                if (fp == _pushActiveFile || fp == _pushPendingFile) return;
+                _pushPendingFile = fp;
+                _pushPendingFutureOnly = futureOnly;
+                return;
+            }
+            _pushInFlight = true;
+            _pushActiveFile = fp;
+        }
+        _ = Task.Run(() => PushLoopAsync(fp, futureOnly));
+    }
+
+    /// <summary>消费合并后的推送请求。异常在这里兜底，不会逃逸成未观察异常。</summary>
+    private static async Task PushLoopAsync(string fp, bool futureOnly)
+    {
+        try
+        {
+            while (true)
+            {
+                await PushOnceAsync(fp, futureOnly).ConfigureAwait(false);
+                lock (_pushLock)
+                {
+                    if (_pushPendingFile is null)
+                    {
+                        _pushInFlight = false;
+                        _pushActiveFile = null;
+                        return;
+                    }
+                    fp = _pushPendingFile;
+                    futureOnly = _pushPendingFutureOnly;
+                    _pushActiveFile = fp;
+                    _pushPendingFile = null;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            lock (_pushLock) { _pushInFlight = false; _pushActiveFile = null; _pushPendingFile = null; }
+            try { LastPushSummary = $"推送失败 · {ex.Message}"; Log("WARN", $"push fail: {ex.Message}"); } catch { }
+        }
+    }
+
+    private static async Task PushOnceAsync(string fp, bool futureOnly)
     {
         var mode = futureOnly ? "future-only" : "active-or-future";
         try
@@ -249,7 +346,8 @@ public class ExamRecorderService : BackgroundService
             var resolved = ResolveSignalUrl();
             var url = resolved.Url;
             Log("INFO", $"push -> {url} mode={mode} source={resolved.Source}");
-            var r = _http.PostAsync(url, new StringContent(JsonSerializer.Serialize(new { ea2Path = fp, futureOnly }), Encoding.UTF8, "application/json")).Result;
+            using var body = new StringContent(JsonSerializer.Serialize(new { ea2Path = fp, futureOnly }), Encoding.UTF8, "application/json");
+            using var r = await _http.PostAsync(url, body).ConfigureAwait(false);
             LastPushSummary = r.IsSuccessStatusCode
                 ? $"推送成功 · {DateTime.Now:HH:mm:ss}（{mode}）"
                 : $"推送失败 · HTTP {(int)r.StatusCode}";
@@ -360,6 +458,7 @@ public class ExamRecorderService : BackgroundService
         _recordRequested = null;
         lock (_uiLock) { _uiTimer?.Dispose(); _uiTimer = null; _uiActions = []; RestoreMainWindowIfNeeded(); }
         _lessons.OnBreakingTime -= OnBreakingTime;
+        if (_lessonsPropertyChanged != null) { _lessons.PropertyChanged -= _lessonsPropertyChanged; _lessonsPropertyChanged = null; }
         Bind(null);
         base.Dispose();
     }
